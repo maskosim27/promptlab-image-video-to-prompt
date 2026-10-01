@@ -1,3 +1,4 @@
+import { GoogleGenAI } from "@google/genai";
 import {
   buildPromptEnhancerImageInstruction,
   buildPromptEnhancerVideoInstruction,
@@ -45,59 +46,26 @@ function inferMimeTypeFromUrl(imageUrl: string): string {
   return "image/jpeg";
 }
 
-function readGeminiError(payload: unknown): string | null {
-  if (
-    payload &&
-    typeof payload === "object" &&
-    "error" in payload &&
-    payload.error &&
-    typeof payload.error === "object" &&
-    "message" in payload.error &&
-    typeof payload.error.message === "string"
-  ) {
-    return payload.error.message;
+type GeminiGenerationRequest = Omit<
+  Parameters<GoogleGenAI["models"]["generateContent"]>[0],
+  "model"
+>;
+
+async function generateGeminiText(
+  apiKey: string,
+  request: GeminiGenerationRequest
+): Promise<string> {
+  const ai = new GoogleGenAI({ apiKey });
+  const response = await ai.models.generateContent({
+    model: GEMINI_ANALYSIS_MODEL,
+    ...request
+  });
+
+  if (typeof response.text !== "string") {
+    throw new Error("Gemini did not return a valid prompt. Please try again.");
   }
 
-  return null;
-}
-
-function readGeminiText(payload: unknown): string {
-  if (
-    payload &&
-    typeof payload === "object" &&
-    "candidates" in payload &&
-    Array.isArray(payload.candidates)
-  ) {
-    const textParts = payload.candidates
-      .flatMap((candidate) => {
-        if (
-          !candidate ||
-          typeof candidate !== "object" ||
-          !("content" in candidate) ||
-          !candidate.content ||
-          typeof candidate.content !== "object" ||
-          !("parts" in candidate.content) ||
-          !Array.isArray(candidate.content.parts)
-        ) {
-          return [];
-        }
-
-        return candidate.content.parts.flatMap((part: unknown) => {
-          if (part && typeof part === "object" && "text" in part && typeof part.text === "string") {
-            return [part.text];
-          }
-          return [];
-        });
-      })
-      .join("\n")
-      .trim();
-
-    if (textParts) {
-      return textParts;
-    }
-  }
-
-  throw new Error("Gemini did not return a valid prompt. Please try again.");
+  return response.text;
 }
 
 export async function analyzeVideoFramesWithGemini({
@@ -111,7 +79,6 @@ export async function analyzeVideoFramesWithGemini({
   frames: ExtractedFrame[];
   videoInfo?: DetectedVideoInfo;
 }): Promise<ReturnType<typeof parseGeminiVideoResponse>> {
-  const endpoint = `https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_ANALYSIS_MODEL}:generateContent`;
   const instruction = buildGeminiVideoInstruction(targetModel, videoInfo);
 
   const frameParts = frames.flatMap((frame, index) => {
@@ -122,42 +89,25 @@ export async function analyzeVideoFramesWithGemini({
         text: `Frame ${index + 1} at ${frame.timestamp.toFixed(2)} seconds`
       },
       {
-        inline_data: inlineData
+        inlineData
       }
     ];
   });
 
-  const response = await fetch(endpoint, {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      "x-goog-api-key": apiKey
-    },
-    body: JSON.stringify({
-      contents: [
-        {
-          role: "user",
-          parts: [{ text: instruction }, ...frameParts]
-        }
-      ],
-      generationConfig: {
-        responseMimeType: "application/json",
-        responseSchema: GEMINI_VIDEO_RESPONSE_SCHEMA,
-        temperature: 0.4,
-        topP: 0.9
+  const text = await generateGeminiText(apiKey, {
+    contents: [
+      {
+        role: "user",
+        parts: [{ text: instruction }, ...frameParts]
       }
-    })
+    ],
+    config: {
+      responseMimeType: "application/json",
+      responseSchema: GEMINI_VIDEO_RESPONSE_SCHEMA,
+      temperature: 0.4,
+      topP: 0.9
+    }
   });
-
-  const payload = (await response.json()) as unknown;
-  if (!response.ok) {
-    throw new Error(
-      readGeminiError(payload) ??
-        "Gemini API request failed. Please check your API key, quota, or network connection."
-    );
-  }
-
-  const text = readGeminiText(payload);
   return parseGeminiVideoResponse(text);
 }
 
@@ -174,59 +124,38 @@ export async function analyzeImageWithGemini({
   imageDataUrl?: string;
   imageInfo?: DetectedImageInfo;
 }): Promise<ReturnType<typeof parseGeminiImageResponse>> {
-  const endpoint = `https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_ANALYSIS_MODEL}:generateContent`;
   const instruction = buildGeminiImageInstruction(targetModel, imageInfo);
   const imagePart = imageUrl
     ? {
-        file_data: {
-          mime_type: inferMimeTypeFromUrl(imageUrl),
-          file_uri: imageUrl
+        fileData: {
+          mimeType: inferMimeTypeFromUrl(imageUrl),
+          fileUri: imageUrl
         }
       }
-    : imageDataUrl
-      ? {
-          inline_data: dataUrlToInlinePart(imageDataUrl)
-        }
-      : null;
+      : imageDataUrl
+        ? {
+            inlineData: dataUrlToInlinePart(imageDataUrl)
+          }
+        : null;
 
   if (!imagePart) {
     throw new Error("No image data was provided for analysis.");
   }
 
-  const response = await fetch(endpoint, {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      "x-goog-api-key": apiKey
-    },
-    body: JSON.stringify({
-      contents: [
-        {
-          role: "user",
-          parts: [
-            { text: instruction },
-            imagePart
-          ]
-        }
-      ],
-      generationConfig: {
-        responseMimeType: "application/json",
-        responseSchema: GEMINI_IMAGE_RESPONSE_SCHEMA,
-        temperature: 0.4,
-        topP: 0.9
+  const text = await generateGeminiText(apiKey, {
+    contents: [
+      {
+        role: "user",
+        parts: [{ text: instruction }, imagePart]
       }
-    })
+    ],
+    config: {
+      responseMimeType: "application/json",
+      responseSchema: GEMINI_IMAGE_RESPONSE_SCHEMA,
+      temperature: 0.4,
+      topP: 0.9
+    }
   });
-
-  const payload = (await response.json()) as unknown;
-  if (!response.ok) {
-    throw new Error(
-      readGeminiError(payload) ??
-        "Gemini API request failed. Please check your API key, quota, or network connection."
-    );
-  }
-
-  const text = readGeminiText(payload);
   return parseGeminiImageResponse(text);
 }
 
@@ -252,72 +181,37 @@ export async function enhancePromptWithGemini({
     throw new Error("Enter a short idea first.");
   }
 
-  const endpoint = `https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_ANALYSIS_MODEL}:generateContent`;
-
   if (mode === "video") {
-    const response = await fetch(endpoint, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        "x-goog-api-key": apiKey
-      },
-      body: JSON.stringify({
-        contents: [
-          {
-            role: "user",
-            parts: [{ text: buildPromptEnhancerVideoInstruction(trimmedIdea) }]
-          }
-        ],
-        generationConfig: {
-          responseMimeType: "application/json",
-          responseSchema: GEMINI_VIDEO_RESPONSE_SCHEMA,
-          temperature: 0.45,
-          topP: 0.9
-        }
-      })
-    });
-
-    const payload = (await response.json()) as unknown;
-    if (!response.ok) {
-      throw new Error(
-        readGeminiError(payload) ??
-          "Gemini API request failed. Please check your API key, quota, or network connection."
-      );
-    }
-
-    const text = readGeminiText(payload);
-    return parseGeminiVideoResponse(text).generatedPrompt;
-  }
-
-  const response = await fetch(endpoint, {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      "x-goog-api-key": apiKey
-    },
-    body: JSON.stringify({
+    const text = await generateGeminiText(apiKey, {
       contents: [
         {
           role: "user",
-          parts: [{ text: buildPromptEnhancerImageInstruction(trimmedIdea) }]
+          parts: [{ text: buildPromptEnhancerVideoInstruction(trimmedIdea) }]
         }
       ],
-      generationConfig: {
-        temperature: 0.55,
+      config: {
+        responseMimeType: "application/json",
+        responseSchema: GEMINI_VIDEO_RESPONSE_SCHEMA,
+        temperature: 0.45,
         topP: 0.9
       }
-    })
-  });
-
-  const payload = (await response.json()) as unknown;
-  if (!response.ok) {
-    throw new Error(
-      readGeminiError(payload) ??
-        "Gemini API request failed. Please check your API key, quota, or network connection."
-    );
+    });
+    return parseGeminiVideoResponse(text).generatedPrompt;
   }
 
-  const prompt = cleanEnhancedPrompt(readGeminiText(payload));
+  const text = await generateGeminiText(apiKey, {
+    contents: [
+      {
+        role: "user",
+        parts: [{ text: buildPromptEnhancerImageInstruction(trimmedIdea) }]
+      }
+    ],
+    config: {
+      temperature: 0.55,
+      topP: 0.9
+    }
+  });
+  const prompt = cleanEnhancedPrompt(text);
   if (!prompt) {
     throw new Error("Gemini did not return a valid prompt. Please try again.");
   }

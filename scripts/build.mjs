@@ -13,6 +13,7 @@ await Promise.all([
     entryPoints: [resolve(root, "src/background/background.ts")],
     outfile: resolve(root, "dist/assets/background.js"),
     bundle: true,
+    minify: true,
     format: "esm",
     platform: "browser",
     target: "chrome114"

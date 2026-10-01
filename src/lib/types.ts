@@ -6,7 +6,7 @@ export const TARGET_MODELS = [
 export type TargetModelId = (typeof TARGET_MODELS)[number]["id"];
 
 export const DEFAULT_TARGET_MODEL: TargetModelId = "seedance-2.0";
-export const GEMINI_ANALYSIS_MODEL = "gemini-2.5-flash";
+export const GEMINI_ANALYSIS_MODEL = "gemini-3.8-flash";
 export const FRAME_SAMPLING_MODES = ["fast", "standard", "detailed"] as const;
 export const DEFAULT_FRAME_SAMPLING_MODE = "standard";
 
