@@ -23,7 +23,9 @@ import {
   type FrameSamplingMode,
   type PromptHistoryItem,
   type RuntimeMessage,
-  type StoredSettings
+  type StoredSettings,
+  type VideoReferenceImages,
+  type VideoReferenceSlot
 } from "../lib/types";
 
 type PanelContextResponse = {
@@ -44,6 +46,13 @@ type MediaSource =
   | { kind: "web-image"; previewUrl?: string; imageInfo?: DetectedImageInfo }
   | { kind: "local-video"; objectUrl: string; fileName: string; videoInfo?: DetectedVideoInfo }
   | { kind: "local-image"; objectUrl: string; fileName: string; file: File; imageInfo?: DetectedImageInfo };
+
+type ReferenceImage = { fileName: string; dataUrl: string };
+const REFERENCE_IMAGE_SLOTS: { id: VideoReferenceSlot; label: string }[] = [
+  { id: "outfit", label: "Outfit" },
+  { id: "background", label: "Background" },
+  { id: "product", label: "Product" }
+];
 
 const FRAME_MODE_COPY: Record<
   FrameSamplingMode,
@@ -421,6 +430,7 @@ export function App() {
     createAnalysisState(null, "idle", "Prompt result will appear here.", DEFAULT_TARGET_MODEL)
   );
   const [mediaSource, setMediaSource] = useState<MediaSource>({ kind: "none" });
+  const [referenceImages, setReferenceImages] = useState<Partial<Record<VideoReferenceSlot, ReferenceImage>>>({});
   const [isAnalyzingLocal, setIsAnalyzingLocal] = useState(false);
   const [copyLabel, setCopyLabel] = useState("Copy");
   const [copiedHistoryId, setCopiedHistoryId] = useState<string | null>(null);
@@ -438,6 +448,7 @@ export function App() {
   const [enhancerCopyLabel, setEnhancerCopyLabel] = useState("Copy");
   const [isEnhancingPrompt, setIsEnhancingPrompt] = useState(false);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
+  const referenceInputRefs = useRef<Partial<Record<VideoReferenceSlot, HTMLInputElement>>>({});
   const localObjectUrlRef = useRef<string | null>(null);
   const menuRef = useRef<HTMLDivElement | null>(null);
   const lastSavedHistoryKeyRef = useRef<string | null>(null);
@@ -681,9 +692,11 @@ export function App() {
         });
         const result = await analyzeVideoFramesWithGemini({
           apiKey: settings.geminiApiKey,
-          targetModel: settings.targetModel,
           frames,
-          videoInfo
+          videoInfo,
+          referenceImages: Object.fromEntries(
+            Object.entries(referenceImages).map(([slot, image]) => [slot, image.dataUrl])
+          ) as VideoReferenceImages
         });
 
         const generatedState = createAnalysisState(activeTabId, "generated", "Prompt generated.", settings.targetModel, {
@@ -815,6 +828,7 @@ export function App() {
     }
 
     setMediaSource({ kind: "none" });
+    setReferenceImages({});
     setAnalysisState(createAnalysisState(activeTabId, "idle", "Prompt result will appear here.", settings.targetModel));
     resetPromptResult();
   }
@@ -910,6 +924,7 @@ export function App() {
     localObjectUrlRef.current = objectUrl;
 
     if (file.type.startsWith("image/")) {
+      setReferenceImages({});
       const image = await createImageElement(objectUrl);
       const imageInfo = buildLocalImageInfo(image, file.name);
       setMediaSource({ kind: "local-image", objectUrl, fileName: file.name, file, imageInfo });
@@ -937,6 +952,34 @@ export function App() {
     setPanelView("main");
     resetPromptResult();
     event.target.value = "";
+  }
+
+  async function handleReferenceImageUpload(
+    slot: VideoReferenceSlot,
+    event: ChangeEvent<HTMLInputElement>
+  ) {
+    const file = event.target.files?.[0];
+    event.target.value = "";
+    if (!file) return;
+    if (!file.type.startsWith("image/")) {
+      showToast("Choose an image file.");
+      return;
+    }
+
+    try {
+      const dataUrl = await readFileAsDataUrl(file);
+      setReferenceImages((current) => ({ ...current, [slot]: { fileName: file.name, dataUrl } }));
+    } catch {
+      showToast("Could not read the selected reference image.");
+    }
+  }
+
+  function handleRemoveReferenceImage(slot: VideoReferenceSlot) {
+    setReferenceImages((current) => {
+      const next = { ...current };
+      delete next[slot];
+      return next;
+    });
   }
 
   async function handleCopy() {
@@ -1038,6 +1081,8 @@ export function App() {
     () => getMediaAspectRatio(mediaSource),
     [mediaSource]
   );
+  const referenceNotes = analysisState.referenceImageNotes;
+  const hasReferenceNotes = REFERENCE_IMAGE_SLOTS.some((slot) => referenceNotes?.[slot.id].trim());
 
   return (
     <main className="promptlab-shell">
@@ -1145,6 +1190,65 @@ export function App() {
               </div>
             ) : null}
           </section>
+
+          {mediaSource.kind === "local-video" ? (
+            <section className="promptlab-card">
+              <div className="card-title">Optional Visual References</div>
+              <p className="reference-image-hint">Analyze and use these references by role. Final prompt fields stay blank.</p>
+              <div className="reference-image-list">
+                {REFERENCE_IMAGE_SLOTS.map((slot) => (
+                  <div className="reference-image-row" key={slot.id}>
+                    <div className="reference-image-meta">
+                      <strong>{slot.label}</strong>
+                      <span>{referenceImages[slot.id]?.fileName ?? "No image selected"}</span>
+                    </div>
+                    <button
+                      className="reference-upload-button"
+                      type="button"
+                      disabled={isAnalyzing}
+                      onClick={() => referenceInputRefs.current[slot.id]?.click()}
+                    >
+                      {referenceImages[slot.id] ? "Replace" : "Choose"}
+                    </button>
+                    <input
+                      ref={(node) => {
+                        referenceInputRefs.current[slot.id] = node ?? undefined;
+                      }}
+                      className="hidden-file-input"
+                      type="file"
+                      accept="image/jpeg,image/png,image/webp,image/gif"
+                      aria-label={`${slot.label} reference image`}
+                      disabled={isAnalyzing}
+                      onChange={(event) => void handleReferenceImageUpload(slot.id, event)}
+                    />
+                    {referenceImages[slot.id] ? (
+                      <button
+                        className="reference-remove-button"
+                        type="button"
+                        disabled={isAnalyzing}
+                        onClick={() => handleRemoveReferenceImage(slot.id)}
+                      >
+                        Remove
+                      </button>
+                    ) : null}
+                  </div>
+                ))}
+              </div>
+            </section>
+          ) : null}
+
+          {resultMode === "text" && hasReferenceNotes ? (
+            <section className="promptlab-card reference-notes-card">
+              <div className="card-title">Reference Image Notes</div>
+              <p className="reference-image-hint">Analysis notes only; these descriptions are not inserted into the prompt fields.</p>
+              {REFERENCE_IMAGE_SLOTS.map((slot) => {
+                const note = referenceNotes?.[slot.id];
+                return note ? (
+                  <p className="reference-note" key={slot.id}><strong>{slot.label}:</strong> {note}</p>
+                ) : null;
+              })}
+            </section>
+          ) : null}
 
           <section className="promptlab-card">
             <div className="result-header">

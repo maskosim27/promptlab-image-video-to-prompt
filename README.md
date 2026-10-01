@@ -34,13 +34,16 @@ For video analysis, please upload a local video file.
 
 ![Local video to prompt](assets/local-video-to-prompt.jpg)
 
-Upload a local video file. PromptLab samples key frames and turns them into one clean Final Result prompt.
+Upload a local video file. PromptLab samples key frames and creates separate reusable prompts for the visible shots.
 
 - Best for short local videos under 60 seconds
 - Extracts key frames automatically
 - Designed for short creative videos, AI videos, ads, reels, and cinematic clips
 - Default frame sampling mode: Standard
 - Supports Fast / Standard / Detailed frame sampling modes
+- Targets 5–10 seconds per segment; preserves source shots shorter than 5 seconds as short exceptions
+- Infers visual hook, product demo/use, and CTA/closing beats from the shot sequence
+- Optionally add outfit, background, and product reference images; their descriptions appear separately while prompt fields remain blank
 
 ### Web Image to Prompt
 
@@ -228,15 +231,9 @@ It focuses on:
 
 ## Video Prompt Logic
 
-Video analysis uses a video-oriented prompt template.
+Video analysis is visual-only: it does not analyze on-screen text, voice, music, or sound effects. The final output is model-neutral and contains separate prompts for each inferred shot segment. Segments target 5–10 seconds; a source shot under 5 seconds remains a shorter exception, while longer shots are split at natural visible action or camera changes.
 
-The final result is written in a **Seedance 2.0-style prompt format**, focusing on clear subject description, action details, camera language, motion continuity, and cinematic scene structure.
-
-Although the output is designed around Seedance 2.0-style prompting, it can also be used as a strong reference prompt for other AI video generation models. You may adjust the wording based on the model you use.
-
-**Read More**:[Seedance 2.0 Prompt Library](https://github.com/gracech0322-cmd/seedance-2-prompt-library)
-
-It focuses on:
+Each segment describes:
 
 - Subject
 - Scene
@@ -246,7 +243,10 @@ It focuses on:
 - Pacing
 - Visual continuity
 - Cinematic structure
-- AI video generation style
+- Affiliate beat (when supported by the visible sequence)
+- Blank `Outfit: [OUTFIT]`, `Background: [BACKGROUND]`, and `Product: [PRODUCT]` fields
+
+Optional reference-image descriptions are shown separately from the prompts and never fill those three fields.
 
 ## Current Limitations
 

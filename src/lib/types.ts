@@ -67,6 +67,7 @@ export type AnalysisState = {
   sourceType?: AnalysisSourceType;
   videoInfo?: DetectedVideoInfo;
   imageInfo?: DetectedImageInfo;
+  referenceImageNotes?: VideoReferenceNotes;
   previewFrameUrl?: string;
   keyframeCount?: number;
   targetModel: TargetModelId;
@@ -107,6 +108,37 @@ export type GeneratedPromptBody = {
   consistencyConstraints: string[];
 };
 
+export type VideoReferenceSlot = "outfit" | "background" | "product";
+export type VideoReferenceImages = Partial<Record<VideoReferenceSlot, string>>;
+export type VideoReferenceNotes = Record<VideoReferenceSlot, string>;
+
+export type GeminiVideoAnalysisSegment = {
+  startSeconds: number;
+  endSeconds: number;
+  shortSourceShot: boolean;
+  affiliateBeat: string;
+  subject: string;
+  action: string;
+  setting: string;
+  framing: string;
+  angle: string;
+  cameraMovement: string;
+  composition: string;
+  lighting: string;
+  transition: string;
+  pacing: string;
+};
+
+export type GeminiVideoAnalysisResponse = {
+  videoSummary: string;
+  generatedPrompt: {
+    globalStyle: string;
+    referenceImageNotes: VideoReferenceNotes;
+    segments: GeminiVideoAnalysisSegment[];
+    consistencyConstraints: string[];
+  };
+};
+
 export type GeminiVideoPromptResponse = {
   videoSummary: string;
   targetModel: string;
@@ -133,7 +165,10 @@ export type GeminiImagePromptResponse = {
   imagePrompt: string;
 };
 
-export type GeminiPromptResponse = GeminiVideoPromptResponse | GeminiImagePromptResponse;
+export type GeminiPromptResponse =
+  | GeminiVideoAnalysisResponse
+  | GeminiVideoPromptResponse
+  | GeminiImagePromptResponse;
 
 export type RuntimeMessage =
   | {

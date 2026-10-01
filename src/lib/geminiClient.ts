@@ -8,29 +8,24 @@ import {
   GEMINI_IMAGE_RESPONSE_SCHEMA,
   GEMINI_VIDEO_RESPONSE_SCHEMA,
   buildGeminiImageInstruction,
-  buildGeminiVideoInstruction,
   parseGeminiImageResponse,
   parseGeminiVideoResponse
 } from "./promptTemplates";
+import {
+  buildVideoAnalysisInstruction,
+  buildVideoAnalysisParts,
+  dataUrlToInlinePart,
+  GEMINI_VIDEO_ANALYSIS_RESPONSE_SCHEMA,
+  parseGeminiVideoAnalysisResponse
+} from "./videoAnalysis";
 import {
   GEMINI_ANALYSIS_MODEL,
   type DetectedImageInfo,
   type DetectedVideoInfo,
   type ExtractedFrame,
-  type TargetModelId
+  type TargetModelId,
+  type VideoReferenceImages
 } from "./types";
-
-function dataUrlToInlinePart(dataUrl: string): { mimeType: string; data: string } {
-  const match = dataUrl.match(/^data:(.+?);base64,(.+)$/);
-  if (!match) {
-    throw new Error("Unsupported frame format.");
-  }
-
-  return {
-    mimeType: match[1],
-    data: match[2]
-  };
-}
 
 function inferMimeTypeFromUrl(imageUrl: string): string {
   const pathname = new URL(imageUrl).pathname.toLowerCase();
@@ -70,45 +65,33 @@ async function generateGeminiText(
 
 export async function analyzeVideoFramesWithGemini({
   apiKey,
-  targetModel,
   frames,
-  videoInfo
+  videoInfo,
+  referenceImages
 }: {
   apiKey: string;
-  targetModel: TargetModelId;
   frames: ExtractedFrame[];
   videoInfo?: DetectedVideoInfo;
-}): Promise<ReturnType<typeof parseGeminiVideoResponse>> {
-  const instruction = buildGeminiVideoInstruction(targetModel, videoInfo);
-
-  const frameParts = frames.flatMap((frame, index) => {
-    const inlineData = dataUrlToInlinePart(frame.dataUrl);
-
-    return [
-      {
-        text: `Frame ${index + 1} at ${frame.timestamp.toFixed(2)} seconds`
-      },
-      {
-        inlineData
-      }
-    ];
-  });
+  referenceImages?: VideoReferenceImages;
+}): Promise<ReturnType<typeof parseGeminiVideoAnalysisResponse>> {
+  const instruction = buildVideoAnalysisInstruction(videoInfo, referenceImages);
+  const videoParts = buildVideoAnalysisParts(frames, referenceImages);
 
   const text = await generateGeminiText(apiKey, {
     contents: [
       {
         role: "user",
-        parts: [{ text: instruction }, ...frameParts]
+        parts: [{ text: instruction }, ...videoParts]
       }
     ],
     config: {
       responseMimeType: "application/json",
-      responseSchema: GEMINI_VIDEO_RESPONSE_SCHEMA,
+      responseSchema: GEMINI_VIDEO_ANALYSIS_RESPONSE_SCHEMA,
       temperature: 0.4,
       topP: 0.9
     }
   });
-  return parseGeminiVideoResponse(text);
+  return parseGeminiVideoAnalysisResponse(text, referenceImages);
 }
 
 export async function analyzeImageWithGemini({
