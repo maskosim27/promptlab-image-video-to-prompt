@@ -9,6 +9,7 @@ PromptLab is a Chrome extension for AI creators, prompt learners, visual referen
 - [What Is PromptLab?](#what-is-promptlab)
 - [What Can PromptLab Do?](#what-can-promptlab-do)
 - [Installation](#installation)
+- [Local Web Edition](#local-web-edition)
 - [How to Get Free Gemini API Key?](#how-to-get-free-gemini-api-key)
 - [API Key Privacy](#api-key-privacy)
 - [Settings](#settings)
@@ -129,6 +130,22 @@ npm run build
 
 After the extension loads, open Settings and add your Gemini API Key.
 
+## Local Web Edition
+
+The repository also builds a standalone browser UI alongside the Chrome extension. It supports local image and video uploads, video reference images, the prompt enhancer, frame-sampling settings, and prompt history. Web-image right-click analysis and extension background-worker features remain extension-only.
+
+Run it locally with Node.js and npm:
+
+```bash
+npm install
+npm run build
+npm run serve:web
+```
+
+Open `http://127.0.0.1:4173`. The server serves only `web-dist/` and binds to loopback; it is not a public web server. Stop it with `Ctrl+C`.
+
+In the local UI, the Gemini API key and history persist in this browser's `localStorage` for the local page origin. Requests go directly from the browser to Gemini; PromptLab has no API proxy or backend. The extension continues using its existing extension-local storage.
+
 ## How to Get Free Gemini API Key?
 
 PromptLab uses your own Gemini API Key.
@@ -141,7 +158,7 @@ After you install the extension, open Settings and paste your Gemini API Key.
 
 ## API Key Privacy
 
-Your Gemini API Key is stored locally in your browser extension storage.
+Your Gemini API Key is stored locally in browser storage (extension storage for the extension; `localStorage` for the local web UI).
 
 The project developer cannot see, collect, or access your API Key.
 
@@ -267,7 +284,7 @@ For best video results, upload a local video file.
 
 PromptLab uses your own Gemini API Key.
 
-Your API Key is stored locally in browser extension storage.
+Your API Key is stored locally in browser storage (extension storage for the extension; `localStorage` for the local web UI).
 
 The developer cannot access your API Key.
 

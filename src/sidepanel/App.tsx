@@ -27,6 +27,7 @@ import {
   type VideoReferenceImages,
   type VideoReferenceSlot
 } from "../lib/types";
+import { IS_EXTENSION } from "../lib/platform";
 
 type PanelContextResponse = {
   activeTabId: number | null;
@@ -477,14 +478,18 @@ export function App() {
       setApiKeyInput(nextSettings.geminiApiKey);
       setHistoryItems(nextHistory);
 
-      const context = (await chrome.runtime.sendMessage({
-        type: "VIDEO2PROMPT_GET_PANEL_CONTEXT"
-      } satisfies RuntimeMessage)) as PanelContextResponse;
-
-      setActiveTabId(context.activeTabId);
-      if (context.state) {
-        syncFromBackgroundState(context.state);
+      if (IS_EXTENSION) {
+        const context = (await chrome.runtime.sendMessage({
+          type: "VIDEO2PROMPT_GET_PANEL_CONTEXT"
+        } satisfies RuntimeMessage)) as PanelContextResponse;
+        setActiveTabId(context.activeTabId);
+        if (context.state) {
+          syncFromBackgroundState(context.state);
+        } else {
+          resetPromptResult();
+        }
       } else {
+        setActiveTabId(null);
         resetPromptResult();
       }
     })();
@@ -524,12 +529,16 @@ export function App() {
       }
     };
 
-    chrome.runtime.onMessage.addListener(handleMessage);
-    chrome.storage.onChanged.addListener(handleStorageChanged);
+    if (IS_EXTENSION) {
+      chrome.runtime.onMessage.addListener(handleMessage);
+      chrome.storage.onChanged.addListener(handleStorageChanged);
+    }
 
     return () => {
-      chrome.runtime.onMessage.removeListener(handleMessage);
-      chrome.storage.onChanged.removeListener(handleStorageChanged);
+      if (IS_EXTENSION) {
+        chrome.runtime.onMessage.removeListener(handleMessage);
+        chrome.storage.onChanged.removeListener(handleStorageChanged);
+      }
       if (localObjectUrlRef.current) {
         URL.revokeObjectURL(localObjectUrlRef.current);
         localObjectUrlRef.current = null;
@@ -667,7 +676,7 @@ export function App() {
     setResultText("Analyzing media...\nThis may take a few moments.");
     setPanelView("main");
 
-    if (mediaSource.kind === "web-image") {
+    if (mediaSource.kind === "web-image" && IS_EXTENSION) {
       const response = (await chrome.runtime.sendMessage({
         type: "VIDEO2PROMPT_START_ANALYSIS",
         tabId: activeTabId ?? undefined,
@@ -820,7 +829,7 @@ export function App() {
       localObjectUrlRef.current = null;
     }
 
-    if (activeTabId) {
+    if (IS_EXTENSION && activeTabId) {
       await chrome.runtime.sendMessage({
         type: "VIDEO2PROMPT_CLEAR_ACTIVE_ANALYSIS",
         tabId: activeTabId
@@ -1014,9 +1023,12 @@ export function App() {
   }
 
   async function handleGenerateVideo() {
-    await chrome.tabs.create({
-      url: "https://seegen.ai/?utm_source=extension"
-    });
+    const url = "https://seegen.ai/?utm_source=extension";
+    if (IS_EXTENSION) {
+      await chrome.tabs.create({ url });
+    } else {
+      window.open(url, "_blank", "noopener,noreferrer");
+    }
   }
 
   async function handleSaveApiKey() {
@@ -1153,7 +1165,7 @@ export function App() {
                   <UploadIcon />
                 </button>
                 <strong>No media selected</strong>
-                <p>Right-click a web image to analyze it, or upload a local image or video.</p>
+                <p>{IS_EXTENSION ? "Right-click a web image to analyze it, or upload a local image or video." : "Upload a local image or video, or try Prompt Enhancer."}</p>
               </div>
             ) : (
               <div
@@ -1598,7 +1610,7 @@ export function App() {
                 </div>
                 <div className="settings-privacy-copy">
                   <h3 className="settings-privacy-title">Privacy</h3>
-                  <p className="settings-copy">Your API key is stored locally in this browser.</p>
+                  <p className="settings-copy">{IS_EXTENSION ? "Your API key is stored locally in this browser." : "Your API key is stored in this browser’s local storage and sent directly to Gemini."}</p>
                 </div>
               </div>
             </article>

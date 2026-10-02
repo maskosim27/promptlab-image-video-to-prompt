@@ -9,6 +9,7 @@ import {
   type StoredSettings,
   type TargetModelId
 } from "./types";
+import { IS_EXTENSION } from "./platform";
 
 const SETTINGS_KEY = "video2prompt:settings";
 const ANALYSIS_KEY_PREFIX = "video2prompt:analysis:";
@@ -19,6 +20,38 @@ export const defaultSettings: StoredSettings = {
   targetModel: DEFAULT_TARGET_MODEL,
   frameSamplingMode: DEFAULT_FRAME_SAMPLING_MODE
 };
+
+async function readStoredValue(key: string): Promise<unknown> {
+  if (IS_EXTENSION) {
+    const stored = await chrome.storage.local.get(key);
+    return stored[key];
+  }
+
+  try {
+    const value = localStorage.getItem(key);
+    return value === null ? undefined : JSON.parse(value);
+  } catch {
+    return undefined;
+  }
+}
+
+async function writeStoredValue(key: string, value: unknown): Promise<void> {
+  if (IS_EXTENSION) {
+    await chrome.storage.local.set({ [key]: value });
+    return;
+  }
+
+  localStorage.setItem(key, JSON.stringify(value));
+}
+
+async function removeStoredValue(key: string): Promise<void> {
+  if (IS_EXTENSION) {
+    await chrome.storage.local.remove(key);
+    return;
+  }
+
+  localStorage.removeItem(key);
+}
 
 function normalizeTargetModel(value: unknown): TargetModelId {
   if (TARGET_MODELS.some((model) => model.id === value)) {
@@ -58,10 +91,9 @@ export function createAnalysisState(
 }
 
 export async function getSettings(): Promise<StoredSettings> {
-  const stored = await chrome.storage.local.get(SETTINGS_KEY);
   const merged = {
     ...defaultSettings,
-    ...(stored[SETTINGS_KEY] as Partial<StoredSettings> | undefined)
+    ...(await readStoredValue(SETTINGS_KEY) as Partial<StoredSettings> | undefined)
   };
 
   return {
@@ -72,9 +104,7 @@ export async function getSettings(): Promise<StoredSettings> {
 }
 
 export async function saveSettings(settings: StoredSettings): Promise<void> {
-  await chrome.storage.local.set({
-    [SETTINGS_KEY]: settings
-  });
+  await writeStoredValue(SETTINGS_KEY, settings);
 }
 
 export async function saveApiKey(geminiApiKey: string): Promise<StoredSettings> {
@@ -116,28 +146,26 @@ export function analysisStorageKey(tabId: number): string {
 export async function getAnalysisState(
   tabId: number
 ): Promise<AnalysisState | null> {
+  if (!IS_EXTENSION) return null;
   const key = analysisStorageKey(tabId);
-  const stored = await chrome.storage.local.get(key);
-  return (stored[key] as AnalysisState | undefined) ?? null;
+  return (await readStoredValue(key) as AnalysisState | undefined) ?? null;
 }
 
 export async function saveAnalysisState(state: AnalysisState): Promise<void> {
-  if (state.tabId == null) {
+  if (!IS_EXTENSION || state.tabId == null) {
     return;
   }
 
-  await chrome.storage.local.set({
-    [analysisStorageKey(state.tabId)]: state
-  });
+  await writeStoredValue(analysisStorageKey(state.tabId), state);
 }
 
 export async function clearAnalysisState(tabId: number): Promise<void> {
-  await chrome.storage.local.remove(analysisStorageKey(tabId));
+  if (!IS_EXTENSION) return;
+  await removeStoredValue(analysisStorageKey(tabId));
 }
 
 export async function getPromptHistory(): Promise<PromptHistoryItem[]> {
-  const stored = await chrome.storage.local.get(HISTORY_KEY);
-  const history = stored[HISTORY_KEY];
+  const history = await readStoredValue(HISTORY_KEY);
   if (!Array.isArray(history)) {
     return [];
   }
@@ -169,9 +197,7 @@ async function savePromptHistory(
   history: PromptHistoryItem[]
 ): Promise<PromptHistoryItem[]> {
   const next = history.slice(0, 20);
-  await chrome.storage.local.set({
-    [HISTORY_KEY]: next
-  });
+  await writeStoredValue(HISTORY_KEY, next);
   return next;
 }
 

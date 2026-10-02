@@ -1,0 +1,16 @@
+body {
+  min-width: 320px;
+}
+
+.promptlab-shell {
+  width: min(100%, 820px);
+  margin: 0 auto;
+  padding: 28px 20px 40px;
+  gap: 16px;
+}
+
+@media (max-width: 520px) {
+  .promptlab-shell {
+    padding: 14px 12px 24px;
+  }
+}

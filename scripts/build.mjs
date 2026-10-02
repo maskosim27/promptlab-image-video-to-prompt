@@ -1,6 +1,7 @@
 import { resolve } from "node:path";
 import { build as viteBuild } from "vite";
 import { build as esbuild } from "esbuild";
+import react from "@vitejs/plugin-react";
 
 const root = process.cwd();
 
@@ -19,3 +20,16 @@ await Promise.all([
     target: "chrome114"
   })
 ]);
+
+await viteBuild({
+  configFile: false,
+  root,
+  plugins: [react()],
+  build: {
+    outDir: "web-dist",
+    emptyOutDir: true,
+    rollupOptions: {
+      input: resolve(root, "web.html")
+    }
+  }
+});
